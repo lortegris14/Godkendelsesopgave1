@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.18",
     "expo": "~57.0.20",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "^4.14.1",
+    "react-native-screens": "^3.37.0"
   },
   "scripts": {
     "start": "expo start",
