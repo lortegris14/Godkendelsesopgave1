@@ -97,6 +97,30 @@ export const jobsStyles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
   },
+  educationLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#555',
+    marginBottom: 6,
+  },
+  educationList: {
+    // Flex-wrap lader uddannelsesboksene fortsætte på næste linje på små skærme.
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 10,
+  },
+  educationTag: {
+    backgroundColor: '#e3f2fd',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  educationText: {
+    fontSize: 12,
+    color: '#185a9d',
+  },
   description: {
     fontSize: 14,
     color: '#666',

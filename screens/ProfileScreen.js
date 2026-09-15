@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { profileStyles as styles } from '../styles';
 
 export default function ProfileScreen() {
+  // Formularens samlede state gør det muligt at opdatere felterne ensartet.
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -10,6 +11,7 @@ export default function ProfileScreen() {
     education: '',
   });
 
+  // Opdaterer kun det felt, brugeren aktuelt skriver i.
   const handleChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -17,6 +19,7 @@ export default function ProfileScreen() {
     }));
   };
 
+  // Nulstiller formularen efter at profilen er gemt lokalt i appen.
   const handleSubmit = () => {
     setFormData({
       name: '',
@@ -48,7 +51,7 @@ export default function ProfileScreen() {
             <Text style={styles.label}>Email</Text>
             <TextInput
               style={styles.input}
-              placeholder="din.email@cbs.dk"
+              placeholder="Skriv din email"
               value={formData.email}
               onChangeText={(value) => handleChange('email', value)}
               keyboardType="email-address"
@@ -59,7 +62,7 @@ export default function ProfileScreen() {
             <Text style={styles.label}>Telefon</Text>
             <TextInput
               style={styles.input}
-              placeholder="+45 XX XX XX XX"
+              placeholder="Skriv dit telefonnummer"
               value={formData.phone}
               onChangeText={(value) => handleChange('phone', value)}
               keyboardType="phone-pad"
@@ -70,7 +73,7 @@ export default function ProfileScreen() {
             <Text style={styles.label}>Uddannelse</Text>
             <TextInput
               style={styles.input}
-              placeholder="ha(IT) - Copenhagen Business School"
+              placeholder="f.eks. ha(IT) - Copenhagen Business School"
               value={formData.education}
               onChangeText={(value) => handleChange('education', value)}
             />

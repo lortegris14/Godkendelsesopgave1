@@ -13,6 +13,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
+      {/* Bottom navigation samler appens tre hovedområder i én navigation. */}
       <StatusBar style="auto" />
       <Tab.Navigator
         screenOptions={{

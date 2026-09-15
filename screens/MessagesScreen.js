@@ -2,6 +2,7 @@ import { View, Text, ScrollView, TextInput, TouchableOpacity } from 'react-nativ
 import { useState } from 'react';
 import { messagesStyles as styles } from '../styles';
 
+// Eksempel på en besked fra en virksomhed.
 const MESSAGES = [
   {
     id: 1,
@@ -12,10 +13,12 @@ const MESSAGES = [
 ];
 
 export default function MessagesScreen() {
+  // Holder både den igangværende tekst og de beskeder, brugeren har sendt.
   const [userMessage, setUserMessage] = useState('');
   const [userMessages, setUserMessages] = useState([]);
 
   const handleSend = () => {
+    // Tomme beskeder skal ikke kunne tilføjes til samtalen.
     if (userMessage.trim()) {
       setUserMessages([...userMessages, userMessage]);
       setUserMessage('');
