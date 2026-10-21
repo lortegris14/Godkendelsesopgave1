@@ -64,6 +64,7 @@ export default function JobsScreen({ userId, navigation }) {
         <Switch
           value={relevantOnly}
           onValueChange={setRelevantOnly}
+          style={{ transform: [{ translateY: 11 }] }}
           trackColor={{ false: '#c8cdd2', true: '#8bbbe8' }}
           thumbColor={relevantOnly ? '#1f77d2' : '#f4f4f4'}
           accessibilityLabel="Filtrer relevante jobs"
