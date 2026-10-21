@@ -71,8 +71,9 @@ export default function LoginScreen({ onLogin }) {
           resizeMode="contain"
           accessibilityLabel="Jobify"
         />
+        
         <Text style={styles.title}>{isCreatingAccount ? 'Opret bruger' : 'Log ind'}</Text>
-        <Text style={styles.subtitle}>Jobify - Din uddannelsesrettede jobportal</Text>
+        <Text style={styles.subtitle}>Skriv dine oplysninger nedenfor</Text>
 
         <Text style={styles.label}>Brugernavn</Text>
         <TextInput
