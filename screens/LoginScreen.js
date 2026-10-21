@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { loginStyles as styles } from '../styles';
 import { readDatabase, writeDatabase } from '../storage';
@@ -65,6 +65,12 @@ export default function LoginScreen({ onLogin }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }} edges={['top']}>
     <ScrollView style={styles.container} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
       <View style={styles.content}>
+        <Image
+          source={require('../assets/jobify-logo.jpg')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="Jobify"
+        />
         <Text style={styles.title}>{isCreatingAccount ? 'Opret bruger' : 'Log ind'}</Text>
         <Text style={styles.subtitle}>Jobify - Din uddannelsesrettede jobportal</Text>
 

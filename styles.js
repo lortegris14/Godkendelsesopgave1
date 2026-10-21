@@ -15,6 +15,13 @@ export const loginStyles = StyleSheet.create({
     padding: 24,
     elevation: 3,
   },
+  logo: {
+    width: '100%',
+    maxWidth: 280,
+    height: 158,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
