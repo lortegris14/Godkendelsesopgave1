@@ -60,7 +60,7 @@ export default function JobsScreen({ userId, navigation }) {
       </View>
 
       <View style={styles.filterRow}>
-        <Text style={styles.filterLabel}>Relevante for mig</Text>
+        <Text style={styles.filterLabel}>Vis kun relevante for mig</Text>
         <Switch
           value={relevantOnly}
           onValueChange={setRelevantOnly}
