@@ -1,8 +1,11 @@
-import { View, Text, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { useState } from 'react';
+import { Alert, View, Text, TextInput, ScrollView, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { profileStyles as styles } from '../styles';
+import { EDUCATIONS, readDatabase, writeDatabase } from '../storage';
 
-export default function ProfileScreen() {
+// Viser og gemmer den aktive jobsøgers profiloplysninger.
+export default function ProfileScreen({ userId, onLogout }) {
   // Formularens samlede state gør det muligt at opdatere felterne ensartet.
   const [formData, setFormData] = useState({
     name: '',
@@ -10,6 +13,17 @@ export default function ProfileScreen() {
     phone: '',
     education: '',
   });
+  const [isEducationMenuOpen, setIsEducationMenuOpen] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    readDatabase().then(database => {
+      if (isMounted) {
+        setFormData(database.profiles[userId] || { name: '', email: '', phone: '', education: '' });
+      }
+    });
+    return () => { isMounted = false; };
+  }, [userId]);
 
   // Opdaterer kun det felt, brugeren aktuelt skriver i.
   const handleChange = (field, value) => {
@@ -19,19 +33,25 @@ export default function ProfileScreen() {
     }));
   };
 
-  // Nulstiller formularen efter at profilen er gemt lokalt i appen.
-  const handleSubmit = () => {
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      education: '',
-    });
+  // Gemmer profilens felter på den aktive brugers konto.
+  const handleSubmit = async () => {
+    try {
+      const database = await readDatabase();
+      database.profiles[userId] = formData;
+      await writeDatabase(database);
+      Alert.alert('Profil gemt', 'Dine profiloplysninger er gemt.');
+    } catch {
+      Alert.alert('Kunne ikke gemme', 'Prøv igen om et øjeblik.');
+    }
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#1f77d2' }} edges={['top']}>
+      <ScrollView
+        style={styles.container}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Min Profil</Text>
         </View>
@@ -71,12 +91,27 @@ export default function ProfileScreen() {
 
           <View style={styles.formGroup}>
             <Text style={styles.label}>Uddannelse</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="f.eks. ha(IT) - Copenhagen Business School"
-              value={formData.education}
-              onChangeText={(value) => handleChange('education', value)}
-            />
+            <TouchableOpacity
+              style={styles.dropdown}
+              onPress={() => setIsEducationMenuOpen(value => !value)}
+            >
+              <Text style={formData.education ? styles.dropdownText : styles.dropdownPlaceholder}>
+                {formData.education || 'Vælg uddannelse'}
+              </Text>
+              <Text style={styles.dropdownArrow}>{isEducationMenuOpen ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {isEducationMenuOpen && EDUCATIONS.map(education => (
+              <TouchableOpacity
+                key={education}
+                style={styles.dropdownOption}
+                onPress={() => {
+                  handleChange('education', education);
+                  setIsEducationMenuOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownText}>{education}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -84,6 +119,9 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
         <Text style={styles.submitButtonText}>Gem Profil</Text>
       </TouchableOpacity>
-    </View>
+      <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
+        <Text style={styles.logoutButtonText}>Log ud</Text>
+      </TouchableOpacity>
+    </SafeAreaView>
   );
 }
