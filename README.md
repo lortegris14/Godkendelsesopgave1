@@ -8,4 +8,4 @@ herefter skal du scanne QR-koden fra terminalen. Sørg for at være på samme in
 
 Link til Demovideo:
 
-https://youtube.com/shorts/a7X5HIIJk8M
+https://youtu.be/CvgYItxXxqE
