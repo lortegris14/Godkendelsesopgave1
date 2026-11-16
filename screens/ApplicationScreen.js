@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -10,7 +11,25 @@ import { readDatabase, writeDatabase } from '../storage';
 export default function ApplicationScreen({ userId, route, navigation }) {
   const [applicationText, setApplicationText] = useState('');
   const [documents, setDocuments] = useState([]);
+  const [profileCv, setProfileCv] = useState(null);
+  const [includeProfileCv, setIncludeProfileCv] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    setIncludeProfileCv(false);
+  }, [userId]);
+
+  useFocusEffect(useCallback(() => {
+    let isActive = true;
+    readDatabase()
+      .then(database => {
+        if (isActive) setProfileCv(database.profiles[userId]?.cv || null);
+      })
+      .catch(() => {
+        if (isActive) Alert.alert('Kunne ikke hente CV', 'Prøv at åbne ansøgningssiden igen.');
+      });
+    return () => { isActive = false; };
+  }, [userId]));
 
   // Lader brugeren vælge PDF-filer til ansøgningen.
   const chooseDocuments = async () => {
@@ -47,11 +66,19 @@ export default function ApplicationScreen({ userId, route, navigation }) {
         Alert.alert('Færdiggør din profil', 'Tilføj navn og uddannelse på profilsiden, før du søger.');
         return;
       }
+      if (includeProfileCv && !profile.cv) {
+        Alert.alert('CV ikke fundet', 'Tilføj dit CV på profilsiden, før du vedhæfter det.');
+        return;
+      }
 
       const attachmentDirectory = `${FileSystem.documentDirectory}applications/`;
       await FileSystem.makeDirectoryAsync(attachmentDirectory, { intermediates: true });
       const files = [];
-      for (const [index, document] of documents.entries()) {
+      const attachments = [
+        ...(includeProfileCv && profile.cv ? [profile.cv] : []),
+        ...documents,
+      ];
+      for (const [index, document] of attachments.entries()) {
         const safeName = document.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         const destination = `${attachmentDirectory}${Date.now()}-${index}-${safeName}`;
         await FileSystem.copyAsync({ from: document.uri, to: destination });
@@ -92,11 +119,17 @@ export default function ApplicationScreen({ userId, route, navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <SafeAreaView style={[styles.container, { backgroundColor: '#f5f5f5' }]} edges={['top']}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backButton}>‹  Tilbage</Text></TouchableOpacity>
         <Text style={styles.title}>Send ansøgning</Text>
+        <TouchableOpacity
+          style={styles.backButtonTouch}
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+        >
+          <Text style={styles.backButton}>‹  Tilbage</Text>
+        </TouchableOpacity>
       </View>
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         <Text style={styles.label}>Ansøgning</Text>
@@ -108,9 +141,25 @@ export default function ApplicationScreen({ userId, route, navigation }) {
           multiline
           textAlignVertical="top"
         />
-        <Text style={styles.label}>Vedhæft PDF-filer</Text>
+        <Text style={styles.label}>Personligt CV</Text>
+        <TouchableOpacity
+          style={styles.profileCvOption}
+          onPress={() => setIncludeProfileCv(value => !value)}
+          disabled={!profileCv || isSending}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: includeProfileCv, disabled: !profileCv }}
+        >
+          <View style={[styles.checkbox, includeProfileCv && styles.checkedCheckbox, !profileCv && styles.disabledCheckbox]}>
+            {includeProfileCv ? <Text style={styles.checkboxCheck}>✓</Text> : null}
+          </View>
+          <View style={styles.profileCvText}>
+            <Text style={[styles.profileCvLabel, !profileCv && styles.disabledText]}>Vedhæft personligt CV</Text>
+            <Text style={styles.profileCvName}>{profileCv?.name || 'Upload et CV på profilsiden først.'}</Text>
+          </View>
+        </TouchableOpacity>
+        <Text style={styles.label}>Andre PDF-dokumenter</Text>
         <TouchableOpacity style={styles.attachButton} onPress={chooseDocuments}>
-          <Text style={styles.attachButtonText}>Vælg CV eller andre PDF-filer</Text>
+          <Text style={styles.attachButtonText}>Tilføj ansøgningsdokumenter</Text>
         </TouchableOpacity>
         {documents.map((document, index) => (
           <View key={`${document.name}-${index}`} style={styles.fileRow}>
@@ -124,7 +173,7 @@ export default function ApplicationScreen({ userId, route, navigation }) {
       <TouchableOpacity style={styles.sendButton} onPress={sendApplication} disabled={isSending}>
         <Text style={styles.sendButtonText}>{isSending ? 'Sender...' : 'Send ansøgning'}</Text>
       </TouchableOpacity>
-    </SafeAreaView>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

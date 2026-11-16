@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { jobsStyles as styles } from '../styles';
 import { readDatabase, writeDatabase } from '../storage';
 
@@ -17,6 +17,9 @@ export default function JobsScreen({ userId, navigation }) {
   const [jobs, setJobs] = useState([]);
   const [education, setEducation] = useState('');
   const [relevantOnly, setRelevantOnly] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [selectedJobId, setSelectedJobId] = useState(null);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     let isMounted = true;
@@ -48,15 +51,40 @@ export default function JobsScreen({ userId, navigation }) {
     }
   };
 
+  const searchTerms = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const searchableJobs = jobs.filter(job => {
+    const educations = Array.isArray(job.educations) ? job.educations : [];
+    const searchableText = [
+      job.position,
+      job.company,
+      ...educations,
+      job.shortDescription,
+      job.fullDescription,
+      job.description,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return !searchTerms.length || searchTerms.some(term => searchableText.includes(term));
+  });
   const visibleJobs = relevantOnly && education
-    ? jobs.filter(job => job.educations.includes(education))
-    : jobs;
+    ? searchableJobs.filter(job => job.educations.includes(education))
+    : searchableJobs;
+  const selectedJob = jobs.find(job => job.id === selectedJobId);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#1f77d2' }} edges={['top']}>
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Ledige Jobs</Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholder="Søg på stilling, virksomhed, uddannelse eller beskrivelse"
+          accessibilityLabel="Søg i jobopslag"
+          returnKeyType="search"
+        />
       </View>
 
       <View style={styles.filterRow}>
@@ -90,7 +118,11 @@ export default function JobsScreen({ userId, navigation }) {
                   <Text style={styles.educationText}>{job.educations[0]}</Text>
                 </View>
               </View>
-              <Text style={styles.description}>{job.description}</Text>
+              <Text style={styles.description}>{job.shortDescription || job.description}</Text>
+
+              <TouchableOpacity style={styles.detailsButton} onPress={() => setSelectedJobId(job.id)}>
+                <Text style={styles.detailsButtonText}>Læs hele opslaget</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity style={styles.applyButton} onPress={() => navigation.navigate('Apply', { jobId: job.id })}>
                 <Text style={styles.applyButtonText}>Søg job</Text>
@@ -130,14 +162,71 @@ export default function JobsScreen({ userId, navigation }) {
             </View>
           );
         })}
-        {!visibleJobs.length && !relevantOnly ? (
+        {!visibleJobs.length && searchTerms.length ? (
+          <Text style={styles.emptyMessage}>Ingen jobopslag matcher din søgning og de valgte filtre.</Text>
+        ) : null}
+        {!visibleJobs.length && !searchTerms.length && !relevantOnly ? (
           <Text style={styles.emptyMessage}>Der er ingen jobopslag endnu.</Text>
         ) : null}
-        {!visibleJobs.length && relevantOnly && education ? (
+        {!visibleJobs.length && !searchTerms.length && relevantOnly && education ? (
           <Text style={styles.emptyMessage}>Ingen jobopslag matcher din uddannelse endnu.</Text>
         ) : null}
       </View>
     </ScrollView>
+    <Modal
+      visible={Boolean(selectedJob)}
+      animationType="slide"
+      onRequestClose={() => setSelectedJobId(null)}
+    >
+      <View style={styles.detailScreen}>
+        <View style={[styles.detailHeader, { minHeight: 56 + insets.top, paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity
+            style={styles.detailBackButtonTouch}
+            onPress={() => setSelectedJobId(null)}
+            hitSlop={10}
+            accessibilityRole="button"
+          >
+            <Text style={styles.detailBackButton}>‹  Tilbage</Text>
+          </TouchableOpacity>
+          <Text style={styles.detailHeaderTitle}>Jobopslag</Text>
+        </View>
+        {selectedJob ? (
+          <ScrollView contentContainerStyle={styles.detailContent}>
+            <Text style={styles.company}>{selectedJob.company}</Text>
+            <Text style={styles.position}>{selectedJob.position}</Text>
+            <Text style={styles.educationLabel}>Relevant uddannelse</Text>
+            <View style={styles.educationList}>
+              {(selectedJob.educations || []).map(item => (
+                <View key={item} style={styles.educationTag}>
+                  <Text style={styles.educationText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.detailSectionTitle}>Kort beskrivelse</Text>
+            <Text style={styles.description}>{selectedJob.shortDescription || selectedJob.description}</Text>
+            <Text style={styles.detailSectionTitle}>Uddybende jobbeskrivelse</Text>
+            <Text style={styles.detailDescription}>
+              {selectedJob.fullDescription || selectedJob.shortDescription || selectedJob.description}
+            </Text>
+            <Text style={styles.detailRating}>
+              {getAverageRating(selectedJob.ratings)
+                ? `${getAverageRating(selectedJob.ratings).toFixed(1).replace('.', ',')} stjerner`
+                : 'Ingen bedømmelser'}
+            </Text>
+            <TouchableOpacity
+              style={styles.applyButton}
+              onPress={() => {
+                const jobId = selectedJob.id;
+                setSelectedJobId(null);
+                navigation.navigate('Apply', { jobId });
+              }}
+            >
+              <Text style={styles.applyButtonText}>Søg job</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        ) : null}
+      </View>
+    </Modal>
     </SafeAreaView>
   );
 }

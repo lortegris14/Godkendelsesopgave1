@@ -3,9 +3,10 @@ import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { companyJobsStyles as styles } from '../styles';
-import { EDUCATIONS, readDatabase, writeDatabase } from '../storage';
+import { EDUCATIONS, getMatchingStudents, readDatabase, writeDatabase } from '../storage';
+import { notifyMatchingStudents } from '../notifications';
 
-const emptyForm = { position: '', educations: [], description: '' };
+const emptyForm = { position: '', educations: [], shortDescription: '', fullDescription: '' };
 
 // Viser virksomhedens job og giver adgang til at oprette, rette og slette dem.
 export default function CompanyJobsScreen({ company, onLogout }) {
@@ -33,7 +34,12 @@ export default function CompanyJobsScreen({ company, onLogout }) {
   // Fylder formularen med oplysninger fra det valgte job.
   const startEdit = job => {
     setEditingId(job.id);
-    setForm({ position: job.position, educations: [...job.educations], description: job.description });
+    setForm({
+      position: job.position,
+      educations: [...job.educations],
+      shortDescription: job.shortDescription,
+      fullDescription: job.fullDescription,
+    });
   };
 
   // Tilføjer eller fjerner en uddannelse fra jobopslaget.
@@ -48,31 +54,70 @@ export default function CompanyJobsScreen({ company, onLogout }) {
 
   // Gemmer et nyt job eller opdaterer det eksisterende.
   const saveJob = async () => {
-    if (!form.position.trim() || !form.description.trim() || !form.educations.length) {
-      Alert.alert('Udfyld felterne', 'Angiv stilling, mindst én uddannelse og en beskrivelse.');
+    if (!form.position.trim() || !form.shortDescription.trim() || !form.fullDescription.trim() || !form.educations.length) {
+      Alert.alert('Udfyld felterne', 'Angiv stilling, mindst én uddannelse, en kort beskrivelse og en uddybende beskrivelse.');
       return;
     }
     try {
       const database = await readDatabase();
+      let createdJob = null;
       if (editingId === 'new') {
-        database.jobs.push({
+        createdJob = {
           id: `job-${company.id}-${Date.now()}`,
           company: company.companyName,
           companyId: company.id,
           position: form.position.trim(),
           educations: form.educations,
-          description: form.description.trim(),
+          shortDescription: form.shortDescription.trim(),
+          fullDescription: form.fullDescription.trim(),
           ratings: {},
           applications: {},
-        });
+        };
+        database.jobs.push(createdJob);
+        const sentAt = new Date().toISOString();
+        for (const student of getMatchingStudents(createdJob, database)) {
+          const chatId = `${createdJob.id}:${student.id}`;
+          if (database.chats[chatId]) continue;
+          database.chats[chatId] = {
+            id: chatId,
+            jobId: createdJob.id,
+            companyId: company.id,
+            seekerId: student.id,
+            messages: [{
+              id: `recommendation-${createdJob.id}`,
+              senderId: company.id,
+              text: `Vi har fundet et jobopslag hos ${createdJob.company}, som kunne være relevant for dig: ${createdJob.position}.`,
+              kind: 'job-recommendation',
+              jobId: createdJob.id,
+              sentAt,
+            }],
+          };
+        }
       } else {
         database.jobs = database.jobs.map(job => job.id === editingId && job.companyId === company.id
-          ? { ...job, position: form.position.trim(), educations: form.educations, description: form.description.trim() }
+          ? {
+            ...job,
+            position: form.position.trim(),
+            educations: form.educations,
+            shortDescription: form.shortDescription.trim(),
+            fullDescription: form.fullDescription.trim(),
+          }
           : job);
       }
       await writeDatabase(database);
       setEditingId(null);
       await refreshJobs();
+
+      if (createdJob) {
+        try {
+          const result = await notifyMatchingStudents(createdJob, database);
+          if (result.permissionDenied) {
+            Alert.alert('Jobopslag gemt', 'Tillad notifikationer i telefonens indstillinger for at modtage beskeder om matchende job.');
+          }
+        } catch {
+          Alert.alert('Jobopslag gemt', 'Notifikationen kunne ikke sendes, men jobopslaget er gemt.');
+        }
+      }
     } catch {
       Alert.alert('Kunne ikke gemme', 'Jobopslaget blev ikke gemt. Prøv igen.');
     }
@@ -148,8 +193,22 @@ export default function CompanyJobsScreen({ company, onLogout }) {
               <Text style={styles.dropdownText}>{form.educations.includes(education) ? '✓  ' : ''}{education}</Text>
             </TouchableOpacity>
           )) : null}
-          <Text style={styles.label}>Beskrivelse</Text>
-          <TextInput style={[styles.input, styles.descriptionInput]} value={form.description} onChangeText={description => setForm(current => ({ ...current, description }))} placeholder="Beskriv jobbet" multiline />
+          <Text style={styles.label}>Kort beskrivelse (vises på joblisten)</Text>
+          <TextInput
+            style={[styles.input, styles.descriptionInput]}
+            value={form.shortDescription}
+            onChangeText={shortDescription => setForm(current => ({ ...current, shortDescription }))}
+            placeholder="Skriv en kort introduktion til jobbet"
+            multiline
+          />
+          <Text style={styles.label}>Uddybende jobbeskrivelse</Text>
+          <TextInput
+            style={[styles.input, styles.descriptionInput]}
+            value={form.fullDescription}
+            onChangeText={fullDescription => setForm(current => ({ ...current, fullDescription }))}
+            placeholder="Beskriv arbejdsopgaver, timer om ugen og stillingens omfang"
+            multiline
+          />
           <View style={styles.actions}>
             <TouchableOpacity style={styles.primaryButton} onPress={saveJob}><Text style={styles.primaryButtonText}>Gem opslag</Text></TouchableOpacity>
             <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditingId(null)}><Text style={styles.secondaryButtonText}>Annuller</Text></TouchableOpacity>
@@ -173,7 +232,7 @@ export default function CompanyJobsScreen({ company, onLogout }) {
               <Text style={styles.companyName}>{job.company}</Text>
               <Text style={styles.position}>{job.position}</Text>
               <Text style={styles.educationLine}>{job.educations.join(' · ')}</Text>
-              <Text style={styles.description}>{job.description}</Text>
+              <Text style={styles.description}>{job.shortDescription}</Text>
               <Text style={styles.rating}>{rating ? `${rating.toFixed(1).replace('.', ',')} stjerner` : 'Ingen bedømmelser'}</Text>
               <Text style={styles.statsTitle}>Ansøgninger: {totalApplications}</Text>
               {counts.map(item => <Text key={item.education} style={styles.statsRow}>{item.education}: {item.count}</Text>)}
