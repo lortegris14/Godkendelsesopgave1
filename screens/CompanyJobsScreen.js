@@ -3,10 +3,10 @@ import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { companyJobsStyles as styles } from '../styles';
-import { EDUCATIONS, getMatchingStudents, readDatabase, writeDatabase } from '../storage';
+import { EDUCATIONS, JOB_LOCATIONS, JOB_TYPES, getMatchingStudents, readDatabase, writeDatabase } from '../storage';
 import { notifyMatchingStudents } from '../notifications';
 
-const emptyForm = { position: '', educations: [], shortDescription: '', fullDescription: '' };
+const emptyForm = { position: '', educations: [], jobType: '', city: '', shortDescription: '', fullDescription: '' };
 
 // Viser virksomhedens job og giver adgang til at oprette, rette og slette dem.
 export default function CompanyJobsScreen({ company, onLogout }) {
@@ -14,6 +14,8 @@ export default function CompanyJobsScreen({ company, onLogout }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [educationMenuOpen, setEducationMenuOpen] = useState(false);
+  const [jobTypeMenuOpen, setJobTypeMenuOpen] = useState(false);
+  const [cityMenuOpen, setCityMenuOpen] = useState(false);
 
   // Henter de jobopslag, der tilhører virksomheden.
   const refreshJobs = async () => {
@@ -37,6 +39,8 @@ export default function CompanyJobsScreen({ company, onLogout }) {
     setForm({
       position: job.position,
       educations: [...job.educations],
+      jobType: job.jobType || '',
+      city: job.city || '',
       shortDescription: job.shortDescription,
       fullDescription: job.fullDescription,
     });
@@ -54,8 +58,8 @@ export default function CompanyJobsScreen({ company, onLogout }) {
 
   // Gemmer et nyt job eller opdaterer det eksisterende.
   const saveJob = async () => {
-    if (!form.position.trim() || !form.shortDescription.trim() || !form.fullDescription.trim() || !form.educations.length) {
-      Alert.alert('Udfyld felterne', 'Angiv stilling, mindst én uddannelse, en kort beskrivelse og en uddybende beskrivelse.');
+    if (!form.position.trim() || !form.shortDescription.trim() || !form.fullDescription.trim() || !form.educations.length || !form.jobType || !form.city) {
+      Alert.alert('Udfyld felterne', 'Angiv stilling, mindst én uddannelse, jobtype, by, en kort beskrivelse og en uddybende beskrivelse.');
       return;
     }
     try {
@@ -68,6 +72,8 @@ export default function CompanyJobsScreen({ company, onLogout }) {
           companyId: company.id,
           position: form.position.trim(),
           educations: form.educations,
+          jobType: form.jobType,
+          city: form.city,
           shortDescription: form.shortDescription.trim(),
           fullDescription: form.fullDescription.trim(),
           ratings: {},
@@ -99,6 +105,8 @@ export default function CompanyJobsScreen({ company, onLogout }) {
             ...job,
             position: form.position.trim(),
             educations: form.educations,
+            jobType: form.jobType,
+            city: form.city,
             shortDescription: form.shortDescription.trim(),
             fullDescription: form.fullDescription.trim(),
           }
@@ -193,6 +201,50 @@ export default function CompanyJobsScreen({ company, onLogout }) {
               <Text style={styles.dropdownText}>{form.educations.includes(education) ? '✓  ' : ''}{education}</Text>
             </TouchableOpacity>
           )) : null}
+          <Text style={styles.label}>Arbejdstid</Text>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setJobTypeMenuOpen(value => !value)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: jobTypeMenuOpen }}
+          >
+            <Text style={styles.dropdownText}>{form.jobType || 'Vælg fuldtid eller deltid'}</Text>
+            <Text style={styles.dropdownArrow}>{jobTypeMenuOpen ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
+          {jobTypeMenuOpen ? JOB_TYPES.map(jobType => (
+            <TouchableOpacity
+              key={jobType}
+              style={styles.option}
+              onPress={() => {
+                setForm(current => ({ ...current, jobType }));
+                setJobTypeMenuOpen(false);
+              }}
+            >
+              <Text style={styles.dropdownText}>{form.jobType === jobType ? '✓  ' : ''}{jobType}</Text>
+            </TouchableOpacity>
+          )) : null}
+          <Text style={styles.label}>By</Text>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setCityMenuOpen(value => !value)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: cityMenuOpen }}
+          >
+            <Text style={styles.dropdownText}>{form.city || 'Vælg by'}</Text>
+            <Text style={styles.dropdownArrow}>{cityMenuOpen ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
+          {cityMenuOpen ? JOB_LOCATIONS.map(city => (
+            <TouchableOpacity
+              key={city}
+              style={styles.option}
+              onPress={() => {
+                setForm(current => ({ ...current, city }));
+                setCityMenuOpen(false);
+              }}
+            >
+              <Text style={styles.dropdownText}>{form.city === city ? '✓  ' : ''}{city}</Text>
+            </TouchableOpacity>
+          )) : null}
           <Text style={styles.label}>Kort beskrivelse (vises på joblisten)</Text>
           <TextInput
             style={[styles.input, styles.descriptionInput]}
@@ -231,6 +283,7 @@ export default function CompanyJobsScreen({ company, onLogout }) {
             <View key={job.id} style={styles.jobCard}>
               <Text style={styles.companyName}>{job.company}</Text>
               <Text style={styles.position}>{job.position}</Text>
+              <Text style={styles.jobInfo}>{job.jobType || 'Ikke angivet'} · {job.city || 'Ikke angivet'}</Text>
               <Text style={styles.educationLine}>{job.educations.join(' · ')}</Text>
               <Text style={styles.description}>{job.shortDescription}</Text>
               <Text style={styles.rating}>{rating ? `${rating.toFixed(1).replace('.', ',')} stjerner` : 'Ingen bedømmelser'}</Text>

@@ -3,8 +3,17 @@ import { Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, 
 import { WebView } from 'react-native-webview';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { messagesStyles as styles } from '../styles';
+import { jobsStyles as filterStyles, messagesStyles as styles } from '../styles';
 import { EDUCATIONS, readDatabase, writeDatabase } from '../storage';
+
+const APPLICANT_STATUSES = [
+  { value: 'studying', label: 'Under uddannelse' },
+  { value: 'completed', label: 'Uddannelsen er færdiggjort' },
+];
+const SEMESTERS = Array.from({ length: 6 }, (_, index) => ({
+  value: String(index + 1),
+  label: `${index + 1}. semester`,
+}));
 
 function StudentAvatar({ profile }) {
   const initial = profile?.name?.trim()?.[0]?.toUpperCase() || '?';
@@ -25,8 +34,14 @@ function StudentAvatar({ profile }) {
 export default function MessagesScreen({ account, route, navigation }) {
   const [database, setDatabase] = useState(null);
   const [selectedJobId, setSelectedJobId] = useState(null);
-  const [selectedEducation, setSelectedEducation] = useState(null);
   const [selectedChatId, setSelectedChatId] = useState(null);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [semesterMenuOpen, setSemesterMenuOpen] = useState(false);
+  const [applicantFilters, setApplicantFilters] = useState({
+    educations: [],
+    statuses: [],
+    semesters: [],
+  });
   const [draft, setDraft] = useState('');
   const [viewingFile, setViewingFile] = useState(null);
   const [viewingProfile, setViewingProfile] = useState(false);
@@ -55,9 +70,12 @@ export default function MessagesScreen({ account, route, navigation }) {
   if (!database) return <View style={styles.container} />;
 
   const isCompany = account.role === 'company';
-  const chats = Object.values(database.chats || {}).filter(chat => (
-    isCompany ? chat.companyId === account.id : chat.seekerId === account.id
-  ));
+  const chats = Object.values(database.chats || {}).filter(chat => {
+    if (!isCompany) return chat.seekerId === account.id;
+    if (chat.companyId !== account.id) return false;
+    const job = database.jobs.find(item => item.id === chat.jobId);
+    return Boolean(job?.applications?.[chat.seekerId]);
+  });
   const getJob = chat => database.jobs.find(job => job.id === chat.jobId);
   const getSeeker = chat => database.profiles[chat.seekerId] || {};
   const getCompanyName = chat => database.accounts.find(item => item.id === chat.companyId)?.companyName || getJob(chat)?.company || 'Virksomhed';
@@ -113,9 +131,91 @@ export default function MessagesScreen({ account, route, navigation }) {
   const selectedJobChats = selectedJobId
     ? chats.filter(chat => chat.jobId === selectedJobId)
     : [];
-  const companyEducationChats = selectedEducation
-    ? selectedJobChats.filter(chat => getSeeker(chat).education === selectedEducation)
-    : [];
+  const canFilterSemesters = applicantFilters.statuses.includes('studying')
+    && !applicantFilters.statuses.includes('completed');
+  const companyVisibleChats = selectedJobChats.filter(chat => {
+    const seeker = getSeeker(chat);
+    const semester = String(seeker.semester || '');
+    const isCurrentlyStudying = SEMESTERS.some(item => item.value === semester);
+    const isCompleted = seeker.semester === 'completed';
+    const statuses = applicantFilters.statuses;
+    return (!applicantFilters.educations.length || applicantFilters.educations.includes(seeker.education))
+      && (!statuses.length
+        || (statuses.includes('studying') && isCurrentlyStudying)
+        || (statuses.includes('completed') && isCompleted))
+      && (!canFilterSemesters || !applicantFilters.semesters.length || applicantFilters.semesters.includes(semester));
+  });
+  const toggleApplicantFilter = (group, value) => {
+    setApplicantFilters(current => {
+      const selected = current[group];
+      const updated = selected.includes(value)
+        ? selected.filter(item => item !== value)
+        : [...selected, value];
+      const statuses = group === 'statuses' ? updated : current.statuses;
+      return {
+        ...current,
+        [group]: updated,
+        semesters: statuses.includes('completed') ? [] : current.semesters,
+      };
+    });
+    if (group === 'statuses') setSemesterMenuOpen(false);
+  };
+  const clearApplicantFilters = () => {
+    setApplicantFilters({ educations: [], statuses: [], semesters: [] });
+    setSemesterMenuOpen(false);
+  };
+  const toggleSemester = value => {
+    setApplicantFilters(current => ({
+      ...current,
+      semesters: current.semesters.includes(value)
+        ? current.semesters.filter(semester => semester !== value)
+        : [...current.semesters, value],
+    }));
+  };
+  const renderApplicantFilterOptions = (title, group, options, getValue = option => option, getLabel = option => option) => (
+    <View style={filterStyles.filterSection}>
+      {title ? <Text style={filterStyles.filterSectionTitle}>{title}</Text> : null}
+      {options.map(option => {
+        const value = getValue(option);
+        const checked = applicantFilters[group].includes(value);
+        return (
+          <TouchableOpacity
+            key={value}
+            style={filterStyles.filterOption}
+            onPress={() => toggleApplicantFilter(group, value)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked }}
+          >
+            <View style={[filterStyles.filterCheckbox, checked && filterStyles.filterCheckboxChecked]}>
+              {checked ? <Text style={filterStyles.filterCheckboxCheck}>✓</Text> : null}
+            </View>
+            <Text style={filterStyles.filterOptionText}>{getLabel(option)}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+  const renderSemesterOptions = () => (
+    <View style={filterStyles.filterSection}>
+      {SEMESTERS.map(({ value, label }) => {
+        const checked = applicantFilters.semesters.includes(value);
+        return (
+          <TouchableOpacity
+            key={value}
+            style={filterStyles.filterOption}
+            onPress={() => toggleSemester(value)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked }}
+          >
+            <View style={[filterStyles.filterCheckbox, checked && filterStyles.filterCheckboxChecked]}>
+              {checked ? <Text style={filterStyles.filterCheckboxCheck}>✓</Text> : null}
+            </View>
+            <Text style={filterStyles.filterOptionText}>{label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -195,12 +295,60 @@ export default function MessagesScreen({ account, route, navigation }) {
           ) : null}
         </View>
       </Modal>
+      <Modal
+        visible={filterModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFilterModalOpen(false)}
+      >
+        <View style={filterStyles.filterModalOverlay}>
+          <View style={filterStyles.filterModal}>
+            <Text style={filterStyles.filterModalTitle}>Filtrer samtaler</Text>
+            <ScrollView style={filterStyles.filterModalScroll} keyboardShouldPersistTaps="handled">
+              {renderApplicantFilterOptions('Uddannelse', 'educations', EDUCATIONS)}
+              {renderApplicantFilterOptions(
+                'Studie-status',
+                'statuses',
+                APPLICANT_STATUSES,
+                status => status.value,
+                status => status.label,
+              )}
+              <View style={styles.semesterFilterSection}>
+                <TouchableOpacity
+                  style={[styles.semesterAccordion, !canFilterSemesters && styles.semesterAccordionDisabled]}
+                  onPress={() => setSemesterMenuOpen(open => !open)}
+                  disabled={!canFilterSemesters}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: semesterMenuOpen, disabled: !canFilterSemesters }}
+                >
+                  <Text style={[styles.semesterAccordionText, !canFilterSemesters && styles.semesterAccordionDisabledText]}>
+                    Vælg semestre
+                  </Text>
+                  <Text style={[styles.semesterAccordionText, !canFilterSemesters && styles.semesterAccordionDisabledText]}>
+                    {semesterMenuOpen ? '▲' : '▼'}
+                  </Text>
+                </TouchableOpacity>
+                {semesterMenuOpen && canFilterSemesters
+                  ? renderSemesterOptions()
+                  : null}
+              </View>
+            </ScrollView>
+            <View style={filterStyles.filterModalActions}>
+              <TouchableOpacity style={filterStyles.clearFiltersButton} onPress={clearApplicantFilters}>
+                <Text style={filterStyles.clearFiltersButtonText}>Fravælg alle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={filterStyles.applyFiltersButton} onPress={() => setFilterModalOpen(false)}>
+                <Text style={filterStyles.applyFiltersButtonText}>Vis samtaler</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <View style={styles.header}>
         <Text style={styles.title}>Beskeder</Text>
-        {(selectedChatId || selectedEducation || selectedJobId) ? (
+        {(selectedChatId || selectedJobId) ? (
           <TouchableOpacity onPress={() => {
             if (selectedChatId) setSelectedChatId(null);
-            else if (selectedEducation) setSelectedEducation(null);
             else setSelectedJobId(null);
           }}>
             <Text style={styles.backButton}>Tilbage</Text>
@@ -220,7 +368,9 @@ export default function MessagesScreen({ account, route, navigation }) {
               ) : (
                 <Text style={styles.conversationName}>{getCompanyName(selectedChat)}</Text>
               )}
-              <Text style={styles.conversationJob}>{getJob(selectedChat)?.position || ''}</Text>
+              <Text style={styles.conversationJob}>
+                {isCompany ? selectedSeeker.education || 'Uddannelse ikke angivet' : selectedChatJob?.position || ''}
+              </Text>
             </View>
           </View>
           <ScrollView style={styles.conversation} contentContainerStyle={styles.conversationContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
@@ -256,39 +406,44 @@ export default function MessagesScreen({ account, route, navigation }) {
             <TouchableOpacity style={styles.sendButton} onPress={sendMessage}><Text style={styles.sendButtonText}>Send</Text></TouchableOpacity>
           </View>
         </>
-      ) : isCompany && selectedJobId && selectedEducation ? (
-        <ScrollView style={styles.list}>
-          <Text style={styles.sectionTitle}>{selectedJob?.position} · {selectedEducation}</Text>
-          {companyEducationChats.map(chat => {
+      ) : isCompany && selectedJobId ? (
+        <ScrollView>
+          <Text style={styles.sectionTitle}>{selectedJob?.position} · samtaler</Text>
+          <View style={filterStyles.filterButtonRow}>
+            <TouchableOpacity
+              style={filterStyles.filterButton}
+              onPress={() => setFilterModalOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Filtrer samtaler"
+            >
+              <Text style={filterStyles.filterButtonText}>Filtrer</Text>
+              {Object.values(applicantFilters).some(group => group.length > 0) ? (
+                <Text style={filterStyles.activeFilterCount}>
+                  {Object.values(applicantFilters).reduce((total, group) => total + group.length, 0)}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+          </View>
+          {companyVisibleChats.map(chat => {
             const seeker = getSeeker(chat);
             return (
               <TouchableOpacity key={chat.id} style={styles.chatRow} onPress={() => openConversation(chat)}>
                 <StudentAvatar profile={seeker} />
                 <View style={styles.chatRowText}>
                   <Text style={styles.chatName}>{seeker.name || chat.seekerId}</Text>
-                  <Text style={styles.chatPreview}>{getJob(chat)?.position}</Text>
+                  <Text style={styles.chatPreview}>{seeker.education || 'Uddannelse ikke angivet'}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             );
           })}
-          {!companyEducationChats.length ? <Text style={styles.emptyMessage}>Ingen samtaler for denne uddannelse endnu.</Text> : null}
-        </ScrollView>
-      ) : isCompany && selectedJobId ? (
-        <ScrollView style={styles.list}>
-          <Text style={styles.sectionTitle}>{selectedJob?.position} · samtaler pr. uddannelse</Text>
-          {EDUCATIONS.map(education => {
-            const count = selectedJobChats.filter(chat => getSeeker(chat).education === education).length;
-            return (
-              <TouchableOpacity key={education} style={styles.chatRow} onPress={() => setSelectedEducation(education)}>
-                <View style={styles.chatRowText}>
-                  <Text style={styles.chatName}>{education}</Text>
-                  <Text style={styles.chatPreview}>{count} {count === 1 ? 'samtale' : 'samtaler'}</Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {!companyVisibleChats.length ? (
+            <Text style={styles.emptyMessage}>
+              {selectedJobChats.length
+                ? 'Ingen samtaler matcher de valgte filtre.'
+                : 'Der er endnu ingen samtaler til dette jobopslag.'}
+            </Text>
+          ) : null}
         </ScrollView>
       ) : isCompany ? (
         <ScrollView style={styles.list}>

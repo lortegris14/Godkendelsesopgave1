@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { jobsStyles as styles } from '../styles';
-import { readDatabase, writeDatabase } from '../storage';
+import { EDUCATIONS, JOB_LOCATIONS, JOB_TYPES, readDatabase, writeDatabase } from '../storage';
 
 // Beregner gennemsnittet af en listes bedømmelser.
 function getAverageRating(ratings) {
@@ -15,9 +15,9 @@ function getAverageRating(ratings) {
 // Viser jobopslag, uddannelsesfilter og bedømmelser for jobsøgeren.
 export default function JobsScreen({ userId, navigation }) {
   const [jobs, setJobs] = useState([]);
-  const [education, setEducation] = useState('');
-  const [relevantOnly, setRelevantOnly] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [filters, setFilters] = useState({ jobTypes: [], cities: [], educations: [] });
   const [selectedJobId, setSelectedJobId] = useState(null);
   const insets = useSafeAreaInsets();
 
@@ -26,7 +26,6 @@ export default function JobsScreen({ userId, navigation }) {
     readDatabase().then(database => {
       if (isMounted) {
         setJobs(database.jobs);
-        setEducation(database.profiles[userId]?.education || '');
       }
     });
     return () => { isMounted = false; };
@@ -57,6 +56,8 @@ export default function JobsScreen({ userId, navigation }) {
     const searchableText = [
       job.position,
       job.company,
+      job.jobType,
+      job.city,
       ...educations,
       job.shortDescription,
       job.fullDescription,
@@ -64,10 +65,45 @@ export default function JobsScreen({ userId, navigation }) {
     ].filter(Boolean).join(' ').toLowerCase();
     return !searchTerms.length || searchTerms.some(term => searchableText.includes(term));
   });
-  const visibleJobs = relevantOnly && education
-    ? searchableJobs.filter(job => job.educations.includes(education))
-    : searchableJobs;
+  const visibleJobs = searchableJobs.filter(job => {
+    const educations = Array.isArray(job.educations) ? job.educations : [];
+    return (!filters.jobTypes.length || filters.jobTypes.includes(job.jobType))
+      && (!filters.cities.length || filters.cities.includes(job.city))
+      && (!filters.educations.length || filters.educations.some(education => educations.includes(education)));
+  });
   const selectedJob = jobs.find(job => job.id === selectedJobId);
+  const toggleFilter = (group, value) => {
+    setFilters(current => ({
+      ...current,
+      [group]: current[group].includes(value)
+        ? current[group].filter(item => item !== value)
+        : [...current[group], value],
+    }));
+  };
+  const clearFilters = () => setFilters({ jobTypes: [], cities: [], educations: [] });
+
+  const renderFilterOptions = (title, group, options) => (
+    <View style={styles.filterSection}>
+      <Text style={styles.filterSectionTitle}>{title}</Text>
+      {options.map(option => {
+        const checked = filters[group].includes(option);
+        return (
+          <TouchableOpacity
+            key={option}
+            style={styles.filterOption}
+            onPress={() => toggleFilter(group, option)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked }}
+          >
+            <View style={[styles.filterCheckbox, checked && styles.filterCheckboxChecked]}>
+              {checked ? <Text style={styles.filterCheckboxCheck}>✓</Text> : null}
+            </View>
+            <Text style={styles.filterOptionText}>{option}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#1f77d2' }} edges={['top']}>
@@ -81,27 +117,27 @@ export default function JobsScreen({ userId, navigation }) {
           style={styles.searchInput}
           value={searchText}
           onChangeText={setSearchText}
-          placeholder="Søg på stilling, virksomhed, uddannelse eller beskrivelse"
+          placeholder="Søg på stilling, virksomhed, fuldtid, deltid, by, uddannelse eller beskrivelse"
           accessibilityLabel="Søg i jobopslag"
           returnKeyType="search"
         />
       </View>
 
-      <View style={styles.filterRow}>
-        <Text style={styles.filterLabel}>Vis kun relevante for mig</Text>
-        <Switch
-          value={relevantOnly}
-          onValueChange={setRelevantOnly}
-          style={{ transform: [{ translateY: 11 }] }}
-          trackColor={{ false: '#c8cdd2', true: '#8bbbe8' }}
-          thumbColor={relevantOnly ? '#1f77d2' : '#f4f4f4'}
-          accessibilityLabel="Filtrer relevante jobs"
-        />
+      <View style={styles.filterButtonRow}>
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => setFilterModalOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Filtrer jobopslag"
+        >
+          <Text style={styles.filterButtonText}>Filtrer</Text>
+          {Object.values(filters).some(group => group.length > 0) ? (
+            <Text style={styles.activeFilterCount}>
+              {Object.values(filters).reduce((total, group) => total + group.length, 0)}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
       </View>
-
-      {relevantOnly && !education ? (
-        <Text style={styles.emptyMessage}>Vælg din uddannelse på profilsiden for at filtrere jobs.</Text>
-      ) : null}
 
       <View style={styles.jobsList}>
         {visibleJobs.map(job => {
@@ -112,6 +148,7 @@ export default function JobsScreen({ userId, navigation }) {
             <View key={job.id} style={styles.jobCard}>
               <Text style={styles.company}>{job.company}</Text>
               <Text style={styles.position}>{job.position}</Text>
+              <Text style={styles.jobInfo}>{job.jobType || 'Ikke angivet'} · {job.city || 'Ikke angivet'}</Text>
               <Text style={styles.educationLabel}>Relevant uddannelse</Text>
               <View style={styles.educationList}>
                 <View style={styles.educationTag}>
@@ -162,17 +199,39 @@ export default function JobsScreen({ userId, navigation }) {
             </View>
           );
         })}
-        {!visibleJobs.length && searchTerms.length ? (
+        {!visibleJobs.length && jobs.length ? (
           <Text style={styles.emptyMessage}>Ingen jobopslag matcher din søgning og de valgte filtre.</Text>
         ) : null}
-        {!visibleJobs.length && !searchTerms.length && !relevantOnly ? (
+        {!visibleJobs.length && !jobs.length ? (
           <Text style={styles.emptyMessage}>Der er ingen jobopslag endnu.</Text>
-        ) : null}
-        {!visibleJobs.length && !searchTerms.length && relevantOnly && education ? (
-          <Text style={styles.emptyMessage}>Ingen jobopslag matcher din uddannelse endnu.</Text>
         ) : null}
       </View>
     </ScrollView>
+    <Modal
+      visible={filterModalOpen}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setFilterModalOpen(false)}
+    >
+      <View style={styles.filterModalOverlay}>
+        <View style={styles.filterModal}>
+          <Text style={styles.filterModalTitle}>Filtrer jobopslag</Text>
+          <ScrollView style={styles.filterModalScroll} keyboardShouldPersistTaps="handled">
+            {renderFilterOptions('Arbejdstid', 'jobTypes', JOB_TYPES)}
+            {renderFilterOptions('By', 'cities', JOB_LOCATIONS)}
+            {renderFilterOptions('Relevant uddannelse', 'educations', EDUCATIONS)}
+          </ScrollView>
+          <View style={styles.filterModalActions}>
+            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+              <Text style={styles.clearFiltersButtonText}>Fravælg alle</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.applyFiltersButton} onPress={() => setFilterModalOpen(false)}>
+              <Text style={styles.applyFiltersButtonText}>Vis job</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
     <Modal
       visible={Boolean(selectedJob)}
       animationType="slide"
@@ -194,6 +253,10 @@ export default function JobsScreen({ userId, navigation }) {
           <ScrollView contentContainerStyle={styles.detailContent}>
             <Text style={styles.company}>{selectedJob.company}</Text>
             <Text style={styles.position}>{selectedJob.position}</Text>
+            <Text style={styles.detailSectionTitle}>Arbejdstid</Text>
+            <Text style={styles.detailDescription}>{selectedJob.jobType || 'Ikke angivet'}</Text>
+            <Text style={styles.detailSectionTitle}>By</Text>
+            <Text style={styles.detailDescription}>{selectedJob.city || 'Ikke angivet'}</Text>
             <Text style={styles.educationLabel}>Relevant uddannelse</Text>
             <View style={styles.educationList}>
               {(selectedJob.educations || []).map(item => (

@@ -3,6 +3,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const STORAGE_KEY = '@min_app/database_v1';
 
 export const EDUCATIONS = ['ha(IT) - CBS', 'ha(JUR) - CBS', 'ha(almen) - CBS'];
+export const JOB_TYPES = ['Fuldtid', 'Deltid'];
+export const JOB_LOCATIONS = [
+  'København C',
+  'København V',
+  'København S',
+  'København Ø',
+  'Frederiksberg',
+  'Lyngby',
+  'Rødovre',
+  'Hellerup',
+  'Glostrup',
+  'Taastrup',
+];
 
 export const INITIAL_JOBS = [
   {
@@ -111,6 +124,8 @@ export async function readDatabase() {
       ...jobData,
       companyId: job.companyId || companyAccount?.id,
       educations: Array.isArray(job.educations) ? job.educations : [],
+      jobType: job.jobType || 'Deltid',
+      city: job.city || JOB_LOCATIONS[Math.floor(Math.random() * JOB_LOCATIONS.length)],
       shortDescription: job.shortDescription || legacyDescription || defaultJob?.shortDescription || '',
       fullDescription: job.fullDescription || defaultJob?.fullDescription || legacyDescription || '',
       ratings: job.ratings || {},
