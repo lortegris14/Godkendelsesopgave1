@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Alert, Text, View } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileScreen from './screens/ProfileScreen';
 import JobsScreen from './screens/JobsScreen';
@@ -11,7 +11,7 @@ import MessagesScreen from './screens/MessagesScreen';
 import LoginScreen from './screens/LoginScreen';
 import CompanyJobsScreen from './screens/CompanyJobsScreen';
 import ApplicationScreen from './screens/ApplicationScreen';
-import { readDatabase, writeDatabase } from './storage';
+import { getUnreadMessageCount, readDatabase, writeDatabase } from './storage';
 
 const Tab = createBottomTabNavigator();
 
@@ -20,6 +20,20 @@ function AppContent() {
   const insets = useSafeAreaInsets();
   const [activeAccount, setActiveAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+
+  const refreshUnreadMessageCount = useCallback(async () => {
+    if (!activeAccount) {
+      setUnreadMessageCount(0);
+      return;
+    }
+    try {
+      const database = await readDatabase();
+      setUnreadMessageCount(getUnreadMessageCount(database, activeAccount.id));
+    } catch {
+      Alert.alert('Kunne ikke hente beskeder', 'Prøv at åbne beskedfanen igen.');
+    }
+  }, [activeAccount]);
 
   useEffect(() => {
     readDatabase()
@@ -31,6 +45,10 @@ function AppContent() {
       .finally(() => setIsLoading(false));
   }, []);
 
+  useEffect(() => {
+    refreshUnreadMessageCount();
+  }, [refreshUnreadMessageCount]);
+
   // Gemmer at brugeren er logget ud og viser login igen.
   const handleLogout = async () => {
     try {
@@ -38,6 +56,7 @@ function AppContent() {
       database.activeUserId = null;
       await writeDatabase(database);
       setActiveAccount(null);
+      setUnreadMessageCount(0);
     } catch {
       Alert.alert('Kunne ikke logge ud', 'Prøv igen om et øjeblik.');
     }
@@ -75,8 +94,8 @@ function AppContent() {
             <Tab.Screen name="CompanyJobs" options={{ tabBarLabel: 'Mine jobopslag', tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>💼</Text> }}>
               {() => <CompanyJobsScreen company={activeAccount} onLogout={handleLogout} />}
             </Tab.Screen>
-            <Tab.Screen name="Messages" options={{ tabBarLabel: 'Beskeder', tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>💬</Text> }}>
-              {props => <MessagesScreen {...props} account={activeAccount} />}
+            <Tab.Screen name="Messages" options={{ tabBarLabel: 'Beskeder', tabBarBadge: unreadMessageCount || undefined, tabBarBadgeStyle: { backgroundColor: '#d32f2f', color: '#fff' }, tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>💬</Text> }}>
+              {props => <MessagesScreen {...props} account={activeAccount} onUnreadMessageCountChange={setUnreadMessageCount} />}
             </Tab.Screen>
           </>
         ) : (
@@ -87,10 +106,10 @@ function AppContent() {
             <Tab.Screen name="Jobs" options={{ tabBarLabel: 'Jobs', tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>💼</Text> }}>
               {props => <JobsScreen {...props} userId={activeAccount.id} />}
             </Tab.Screen>
-            <Tab.Screen name="Messages" options={{ tabBarLabel: 'Beskeder', tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>💬</Text> }}>
-              {props => <MessagesScreen {...props} account={activeAccount} />}
+            <Tab.Screen name="Messages" options={{ tabBarLabel: 'Beskeder', tabBarBadge: unreadMessageCount || undefined, tabBarBadgeStyle: { backgroundColor: '#d32f2f', color: '#fff' }, tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>💬</Text> }}>
+              {props => <MessagesScreen {...props} account={activeAccount} onUnreadMessageCountChange={setUnreadMessageCount} />}
             </Tab.Screen>
-            <Tab.Screen name="Apply" options={{ tabBarButton: () => null }}>
+            <Tab.Screen name="Apply" options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}>
               {props => <ApplicationScreen {...props} userId={activeAccount.id} />}
             </Tab.Screen>
           </>

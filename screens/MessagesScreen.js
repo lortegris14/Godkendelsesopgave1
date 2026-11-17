@@ -4,7 +4,15 @@ import { WebView } from 'react-native-webview';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { jobsStyles as filterStyles, messagesStyles as styles } from '../styles';
-import { EDUCATIONS, readDatabase, writeDatabase } from '../storage';
+import {
+  clearUnreadMessageCount,
+  EDUCATIONS,
+  getUnreadMessageCount,
+  incrementUnreadMessageCount,
+  readDatabase,
+  writeDatabase,
+} from '../storage';
+import { notifyNewMessage } from '../notifications';
 
 const APPLICANT_STATUSES = [
   { value: 'studying', label: 'Under uddannelse' },
@@ -30,8 +38,14 @@ function StudentAvatar({ profile }) {
   );
 }
 
+function getLastMessageTime(chat) {
+  const lastMessage = chat.messages?.[chat.messages.length - 1];
+  const timestamp = Date.parse(lastMessage?.sentAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 // Viser brugerens chats og lader begge parter sende beskeder.
-export default function MessagesScreen({ account, route, navigation }) {
+export default function MessagesScreen({ account, route, navigation, onUnreadMessageCountChange }) {
   const [database, setDatabase] = useState(null);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [selectedChatId, setSelectedChatId] = useState(null);
@@ -46,6 +60,32 @@ export default function MessagesScreen({ account, route, navigation }) {
   const [viewingFile, setViewingFile] = useState(null);
   const [viewingProfile, setViewingProfile] = useState(false);
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (database) {
+      onUnreadMessageCountChange?.(getUnreadMessageCount(database, account.id));
+    }
+  }, [database, account.id, onUnreadMessageCountChange]);
+
+  const markConversationAsRead = async chatId => {
+    if (!database?.chats?.[chatId]?.unreadCounts?.[account.id]) return;
+    try {
+      const updated = await readDatabase();
+      const chat = updated.chats[chatId];
+      if (!chat?.unreadCounts?.[account.id]) return;
+      clearUnreadMessageCount(chat, account.id);
+      await writeDatabase(updated);
+      setDatabase(updated);
+    } catch {
+      Alert.alert('Kunne ikke opdatere beskeder', 'Ulæste beskeder blev ikke markeret som læst. Prøv igen.');
+    }
+  };
+
+  useEffect(() => {
+    if (selectedChatId && database) {
+      markConversationAsRead(selectedChatId);
+    }
+  }, [selectedChatId, database, account.id]);
 
   // Genindlæser beskeder, når fanen åbnes, så nye ansøgninger vises med det samme.
   useFocusEffect(useCallback(() => {
@@ -75,11 +115,22 @@ export default function MessagesScreen({ account, route, navigation }) {
     if (chat.companyId !== account.id) return false;
     const job = database.jobs.find(item => item.id === chat.jobId);
     return Boolean(job?.applications?.[chat.seekerId]);
-  });
+  }).sort((first, second) => getLastMessageTime(second) - getLastMessageTime(first));
   const getJob = chat => database.jobs.find(job => job.id === chat.jobId);
   const getSeeker = chat => database.profiles[chat.seekerId] || {};
   const getCompanyName = chat => database.accounts.find(item => item.id === chat.companyId)?.companyName || getJob(chat)?.company || 'Virksomhed';
-  const companyJobs = isCompany ? database.jobs.filter(job => job.companyId === account.id) : [];
+  const latestActivityByJob = new Map();
+  chats.forEach(chat => {
+    latestActivityByJob.set(
+      chat.jobId,
+      Math.max(latestActivityByJob.get(chat.jobId) || 0, getLastMessageTime(chat)),
+    );
+  });
+  const companyJobs = isCompany
+    ? database.jobs
+      .filter(job => job.companyId === account.id)
+      .sort((first, second) => (latestActivityByJob.get(second.id) || 0) - (latestActivityByJob.get(first.id) || 0))
+    : [];
   const selectedJob = companyJobs.find(job => job.id === selectedJobId);
 
   // Gemmer en besked i den åbne chat.
@@ -91,10 +142,23 @@ export default function MessagesScreen({ account, route, navigation }) {
       const chat = updated.chats[selectedChatId];
       if (!chat) return;
       chat.messages = chat.messages || [];
-      chat.messages.push({ id: `message-${Date.now()}`, senderId: account.id, text, sentAt: new Date().toISOString() });
+      const message = { id: `message-${Date.now()}`, senderId: account.id, text, sentAt: new Date().toISOString() };
+      chat.messages.push(message);
+      const recipientId = isCompany ? chat.seekerId : chat.companyId;
+      incrementUnreadMessageCount(chat, recipientId);
       await writeDatabase(updated);
       setDatabase(updated);
       setDraft('');
+      try {
+        const recipient = updated.accounts.find(item => item.id === recipientId);
+        const sender = isCompany ? account : updated.profiles[account.id];
+        const result = await notifyNewMessage(recipient, sender, chat, message);
+        if (result.permissionDenied) {
+          Alert.alert('Besked sendt', 'Tillad notifikationer i telefonens indstillinger for at modtage nye beskeder.');
+        }
+      } catch {
+        Alert.alert('Besked sendt', 'Notifikationen kunne ikke sendes, men beskeden er gemt.');
+      }
     } catch {
       Alert.alert('Kunne ikke sende', 'Beskeden blev ikke sendt. Prøv igen.');
     }
@@ -427,12 +491,18 @@ export default function MessagesScreen({ account, route, navigation }) {
           {companyVisibleChats.map(chat => {
             const seeker = getSeeker(chat);
             return (
-              <TouchableOpacity key={chat.id} style={styles.chatRow} onPress={() => openConversation(chat)}>
+              <TouchableOpacity
+                key={chat.id}
+                style={styles.chatRow}
+                onPress={() => openConversation(chat)}
+                accessibilityLabel={`${seeker.name || chat.seekerId}${chat.unreadCounts?.[account.id] ? `, ${chat.unreadCounts[account.id]} ulæste beskeder` : ''}`}
+              >
                 <StudentAvatar profile={seeker} />
                 <View style={styles.chatRowText}>
                   <Text style={styles.chatName}>{seeker.name || chat.seekerId}</Text>
                   <Text style={styles.chatPreview}>{seeker.education || 'Uddannelse ikke angivet'}</Text>
                 </View>
+                {chat.unreadCounts?.[account.id] > 0 ? <Text style={styles.unreadBadge}>{chat.unreadCounts[account.id]}</Text> : null}
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             );
@@ -450,12 +520,16 @@ export default function MessagesScreen({ account, route, navigation }) {
           <Text style={styles.sectionTitle}>Vælg jobopslag</Text>
           {companyJobs.map(job => {
             const count = chats.filter(chat => chat.jobId === job.id).length;
+            const unreadCount = chats
+              .filter(chat => chat.jobId === job.id)
+              .reduce((total, chat) => total + (Number(chat.unreadCounts?.[account.id]) || 0), 0);
             return (
               <TouchableOpacity key={job.id} style={styles.chatRow} onPress={() => setSelectedJobId(job.id)}>
                 <View style={styles.chatRowText}>
                   <Text style={styles.chatName}>{job.position}</Text>
                   <Text style={styles.chatPreview}>{count} {count === 1 ? 'samtale' : 'samtaler'}</Text>
                 </View>
+                {unreadCount > 0 ? <Text style={styles.unreadBadge}>{unreadCount}</Text> : null}
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             );
@@ -468,11 +542,17 @@ export default function MessagesScreen({ account, route, navigation }) {
             const job = getJob(chat);
             const lastMessage = chat.messages?.[chat.messages.length - 1];
             return (
-              <TouchableOpacity key={chat.id} style={styles.chatRow} onPress={() => openConversation(chat)}>
+              <TouchableOpacity
+                key={chat.id}
+                style={styles.chatRow}
+                onPress={() => openConversation(chat)}
+                accessibilityLabel={`${getCompanyName(chat)}${chat.unreadCounts?.[account.id] ? `, ${chat.unreadCounts[account.id]} ulæste beskeder` : ''}`}
+              >
                 <View style={styles.chatRowText}>
                   <Text style={styles.chatName}>{getCompanyName(chat)}</Text>
                   <Text style={styles.chatPreview}>{job?.position}{lastMessage ? ` · ${lastMessage.text}` : ''}</Text>
                 </View>
+                {chat.unreadCounts?.[account.id] > 0 ? <Text style={styles.unreadBadge}>{chat.unreadCounts[account.id]}</Text> : null}
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             );

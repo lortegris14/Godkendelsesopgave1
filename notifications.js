@@ -11,6 +11,22 @@ Notifications.setNotificationHandler({
   }),
 });
 
+async function requestNotificationPermission() {
+  const { status: currentStatus } = await Notifications.getPermissionsAsync();
+  return currentStatus === 'granted'
+    ? currentStatus
+    : (await Notifications.requestPermissionsAsync()).status;
+}
+
+async function configureAndroidChannel(channelId, name) {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(channelId, {
+      name,
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
+  }
+}
+
 export async function notifyMatchingStudents(job, database) {
   const recipients = getMatchingStudents(job, database);
 
@@ -22,21 +38,12 @@ export async function notifyMatchingStudents(job, database) {
     throw new Error('Lokale notifikationer understøttes kun på iOS og Android.');
   }
 
-  const { status: currentStatus } = await Notifications.getPermissionsAsync();
-  const status = currentStatus === 'granted'
-    ? currentStatus
-    : (await Notifications.requestPermissionsAsync()).status;
-
+  const status = await requestNotificationPermission();
   if (status !== 'granted') {
     return { count: 0, permissionDenied: true };
   }
 
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('job-matches', {
-      name: 'Matchende jobopslag',
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  }
+  await configureAndroidChannel('job-matches', 'Matchende jobopslag');
 
   await Promise.all(recipients.map(account => Notifications.scheduleNotificationAsync({
     content: {
@@ -49,4 +56,29 @@ export async function notifyMatchingStudents(job, database) {
   })));
 
   return { count: recipients.length, permissionDenied: false };
+}
+
+export async function notifyNewMessage(recipient, sender, chat, message) {
+  if (!recipient) return { count: 0, permissionDenied: false };
+  if (Platform.OS === 'web') {
+    throw new Error('Lokale notifikationer understøttes kun på iOS og Android.');
+  }
+
+  const status = await requestNotificationPermission();
+  if (status !== 'granted') {
+    return { count: 0, permissionDenied: true };
+  }
+
+  await configureAndroidChannel('new-messages', 'Nye beskeder');
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Ny besked fra ${sender?.companyName || sender?.name || 'en bruger'}`,
+      body: message.text || 'Du har modtaget en vedhæftning.',
+      data: { chatId: chat.id, userId: recipient.id },
+      channelId: 'new-messages',
+    },
+    trigger: null,
+  });
+
+  return { count: 1, permissionDenied: false };
 }

@@ -97,6 +97,23 @@ export function getMatchingStudents(job, database) {
   });
 }
 
+export function getUnreadMessageCount(database, userId) {
+  return Object.values(database.chats || {}).reduce(
+    (total, chat) => total + Math.max(0, Number(chat.unreadCounts?.[userId]) || 0),
+    0,
+  );
+}
+
+export function incrementUnreadMessageCount(chat, userId) {
+  chat.unreadCounts = chat.unreadCounts || {};
+  chat.unreadCounts[userId] = (Number(chat.unreadCounts[userId]) || 0) + 1;
+}
+
+export function clearUnreadMessageCount(chat, userId) {
+  chat.unreadCounts = chat.unreadCounts || {};
+  chat.unreadCounts[userId] = 0;
+}
+
 // Laver en tom database med de første jobopslag.
 const createDatabase = () => ({ accounts: [], activeUserId: null, profiles: {}, jobs: INITIAL_JOBS, chats: {} });
 
@@ -108,6 +125,12 @@ export async function readDatabase() {
   database.jobs = Array.isArray(database.jobs) ? database.jobs : INITIAL_JOBS;
   database.profiles = database.profiles || {};
   database.chats = database.chats || {};
+  for (const chat of Object.values(database.chats)) {
+    chat.messages = Array.isArray(chat.messages) ? chat.messages : [];
+    chat.unreadCounts = chat.unreadCounts && typeof chat.unreadCounts === 'object' && !Array.isArray(chat.unreadCounts)
+      ? chat.unreadCounts
+      : {};
+  }
 
   for (const companyAccount of COMPANY_ACCOUNTS) {
     if (!database.accounts.some(account => account.id === companyAccount.id)) {

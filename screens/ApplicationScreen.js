@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { applicationStyles as styles } from '../styles';
-import { readDatabase, writeDatabase } from '../storage';
+import { incrementUnreadMessageCount, readDatabase, writeDatabase } from '../storage';
+import { notifyNewMessage } from '../notifications';
 
 // Viser ansøgningsformularen og holder styr på tekst og vedhæftninger.
 export default function ApplicationScreen({ userId, route, navigation }) {
@@ -99,17 +100,29 @@ export default function ApplicationScreen({ userId, route, navigation }) {
         companyId: job.companyId,
         seekerId: userId,
         messages: [],
+        unreadCounts: {},
       };
-      chat.messages.push({
+      const message = {
         id: `application-${Date.now()}`,
         senderId: userId,
         text: applicationText.trim(),
         files,
         kind: 'application',
         sentAt: new Date().toISOString(),
-      });
+      };
+      chat.messages.push(message);
+      incrementUnreadMessageCount(chat, job.companyId);
       database.chats[chatId] = chat;
       await writeDatabase(database);
+      try {
+        const recipient = database.accounts.find(item => item.id === job.companyId);
+        const result = await notifyNewMessage(recipient, profile, chat, message);
+        if (result.permissionDenied) {
+          Alert.alert('Ansøgning sendt', 'Tillad notifikationer i telefonens indstillinger for at modtage nye beskeder.');
+        }
+      } catch {
+        Alert.alert('Ansøgning sendt', 'Notifikationen kunne ikke sendes, men ansøgningen er gemt.');
+      }
       navigation.navigate('Messages', { chatId });
     } catch {
       Alert.alert('Kunne ikke sende', 'Ansøgningen blev ikke sendt. Prøv igen.');

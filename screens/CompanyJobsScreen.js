@@ -97,6 +97,7 @@ export default function CompanyJobsScreen({ company, onLogout }) {
               jobId: createdJob.id,
               sentAt,
             }],
+            unreadCounts: { [student.id]: 1 },
           };
         }
       } else {
